@@ -10,16 +10,20 @@ import {
   X,
   ExternalLink,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Compass,
+  Sparkles
 } from 'lucide-react';
 
 interface DrugInfoSidebarProps {
   drugs?: Drug[];
   interactions?: DrugInteraction[];
+  centerDrug?: Drug | null;
   selectedDrug: Drug | null;
   selectedInteraction: DrugInteraction | null;
   onClose: () => void;
   onSelectDrug: (drug: Drug) => void;
+  onCenterDrug?: (drugId: string) => void;
   onSelectInteraction: (interaction: DrugInteraction) => void;
   isInCabinet: (drugId: string) => boolean;
   onToggleCabinet: (drugId: string) => void;
@@ -28,69 +32,40 @@ interface DrugInfoSidebarProps {
 export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
   drugs = DRUGS,
   interactions = INTERACTIONS,
+  centerDrug,
   selectedDrug,
   selectedInteraction,
   onClose,
   onSelectDrug,
+  onCenterDrug,
   onSelectInteraction,
   isInCabinet,
   onToggleCabinet,
 }) => {
-  if (!selectedDrug && !selectedInteraction) {
-    return (
-      <div className="w-80 md:w-96 bg-white border-l border-slate-200 h-full p-6 flex flex-col justify-between overflow-y-auto">
-        <div className="text-center py-12">
-          <div className="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100">
-            <Activity className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-semibold text-slate-800 mb-1">Interactive Clinical Inspector</h3>
-          <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto mb-6">
-            Click any drug node to view active ingredients, side effects, and dangerous pairs. Click any connection line to inspect the clinical mechanism.
-          </p>
-
-          <div className="text-left bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs text-slate-600 space-y-2">
-            <span className="font-semibold text-slate-700 block text-[11px] uppercase tracking-wider">
-              Quick Suggestions to Explore
-            </span>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {['Warfarin', 'Aspirin', 'Zoloft', 'Tramadol', 'Nitrostat', 'Viagra', 'Lipitor'].map((name) => {
-                const d = drugs.find((x) => x.brandName === name) || drugs[0];
-                if (!d) return null;
-                return (
-                  <button
-                    key={d.id}
-                    onClick={() => onSelectDrug(d)}
-                    className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:border-sky-300 hover:text-sky-700 hover:bg-sky-50/50 transition-colors shadow-2xs"
-                  >
-                    {d.brandName}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="text-[11px] text-slate-400 text-center border-t border-slate-100 pt-3">
-          Derived from clinical pharmacology datasets and FDA adverse reporting models.
-        </div>
-      </div>
-    );
-  }
-
-
-  // CONNECTION / INTERACTION SELECTED
+  // If an interaction line is selected, show its clinical details
   if (selectedInteraction) {
-    const drugA = DRUGS.find((d) => d.id === selectedInteraction.drug1);
-    const drugB = DRUGS.find((d) => d.id === selectedInteraction.drug2);
+    const drugA = drugs.find((d) => d.id === selectedInteraction.drug1);
+    const drugB = drugs.find((d) => d.id === selectedInteraction.drug2);
 
     const isSevere = selectedInteraction.severity === 'severe';
     const isModerate = selectedInteraction.severity === 'moderate';
 
-    const severityBg = isSevere ? 'bg-rose-50 border-rose-200 text-rose-900' : isModerate ? 'bg-orange-50 border-orange-200 text-orange-900' : 'bg-amber-50 border-amber-200 text-amber-900';
-    const severityBadge = isSevere ? 'bg-rose-600 text-white' : isModerate ? 'bg-orange-500 text-white' : 'bg-amber-500 text-white';
+    const severityBg = isSevere
+      ? 'bg-rose-50 border-rose-200 text-rose-900'
+      : isModerate
+      ? 'bg-orange-50 border-orange-200 text-orange-900'
+      : 'bg-amber-50 border-amber-200 text-amber-900';
+    const severityBadge = isSevere
+      ? 'bg-rose-600 text-white'
+      : isModerate
+      ? 'bg-orange-500 text-white'
+      : 'bg-amber-500 text-white';
 
     return (
-      <aside aria-label="Interaction Details" className="w-80 md:w-96 bg-white border-l border-slate-200 h-full flex flex-col shadow-lg z-20 overflow-y-auto">
+      <aside
+        aria-label="Interaction Details"
+        className="w-80 md:w-96 bg-white border-l border-slate-200 h-full flex flex-col shadow-lg z-20 overflow-y-auto"
+      >
         {/* Header */}
         <div className="p-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/80">
           <div>
@@ -99,9 +74,13 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
               <span aria-hidden="true">·</span>
               <span className="capitalize">{selectedInteraction.mechanismType}</span>
             </div>
-            <h2 className="text-sm font-bold text-slate-900 leading-snug">
-              {selectedInteraction.title}
-            </h2>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${severityBadge}`}
+              >
+                {selectedInteraction.severity} Risk
+              </span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -111,89 +90,58 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
-          {/* Severity Banner */}
-          <div className={`p-3.5 rounded-xl border ${severityBg}`}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded tracking-wide uppercase ${severityBadge}`}>
-                {selectedInteraction.severity} Risk
-              </span>
-              <span className="text-xs font-medium opacity-90 flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Negative Interaction
-              </span>
-            </div>
-            <p className="text-xs font-medium leading-relaxed">
+        <div className="p-5 space-y-4 flex-1">
+          {/* Drug A & B Pills */}
+          <div className="flex items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+            <button
+              onClick={() => drugA && onSelectDrug(drugA)}
+              className="font-bold text-slate-900 hover:text-sky-700 truncate"
+            >
+              {drugA?.brandName || selectedInteraction.drug1}
+            </button>
+            <span className="text-slate-400 font-bold">⇄</span>
+            <button
+              onClick={() => drugB && onSelectDrug(drugB)}
+              className="font-bold text-slate-900 hover:text-sky-700 truncate"
+            >
+              {drugB?.brandName || selectedInteraction.drug2}
+            </button>
+          </div>
+
+          {/* Quick Center Buttons */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {drugA && onCenterDrug && (
+              <button
+                onClick={() => onCenterDrug(drugA.id)}
+                className="py-1.5 px-2.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg font-semibold hover:bg-sky-100 transition-colors text-center truncate"
+              >
+                Center on {drugA.brandName}
+              </button>
+            )}
+            {drugB && onCenterDrug && (
+              <button
+                onClick={() => onCenterDrug(drugB.id)}
+                className="py-1.5 px-2.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg font-semibold hover:bg-sky-100 transition-colors text-center truncate"
+              >
+                Center on {drugB.brandName}
+              </button>
+            )}
+          </div>
+
+          {/* Title & Description Card */}
+          <div className={`p-4 rounded-xl border ${severityBg}`}>
+            <h3 className="font-bold text-sm mb-1">{selectedInteraction.title}</h3>
+            <p className="text-xs leading-relaxed opacity-95">
               {selectedInteraction.description}
             </p>
           </div>
 
-          {/* Involved Drugs Pair Pill */}
+          {/* Clinical Rationale */}
           <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
-              Conflicting Medications
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+              Pharmacological Mechanism
             </span>
-            <div className="grid grid-cols-2 gap-2">
-              {drugA && (
-                <button
-                  onClick={() => onSelectDrug(drugA)}
-                  className="p-3 text-left bg-slate-50 hover:bg-sky-50/70 border border-slate-200 rounded-xl transition-colors group"
-                >
-                  <span className="text-xs font-bold text-slate-900 group-hover:text-sky-700 block truncate">
-                    {drugA.brandName}
-                  </span>
-                  <span className="text-[11px] text-slate-500 block truncate">
-                    {drugA.genericName}
-                  </span>
-                </button>
-              )}
-              {drugB && (
-                <button
-                  onClick={() => onSelectDrug(drugB)}
-                  className="p-3 text-left bg-slate-50 hover:bg-sky-50/70 border border-slate-200 rounded-xl transition-colors group"
-                >
-                  <span className="text-xs font-bold text-slate-900 group-hover:text-sky-700 block truncate">
-                    {drugB.brandName}
-                  </span>
-                  <span className="text-[11px] text-slate-500 block truncate">
-                    {drugB.genericName}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Mechanism & Line Style Insight */}
-          <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-200/80">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
-              Network Line Mechanism
-            </span>
-            <div className="text-xs text-slate-700 space-y-1">
-              <div className="flex items-center gap-2 mb-1">
-                {selectedInteraction.mechanismType === 'metabolic' ? (
-                  <span className="w-8 border-b-2 border-dashed border-rose-500 inline-block" />
-                ) : selectedInteraction.mechanismType === 'clearance' ? (
-                  <span className="w-8 border-b-2 border-dotted border-amber-500 inline-block" />
-                ) : (
-                  <span className="w-8 h-1 bg-rose-500 inline-block rounded" />
-                )}
-                <span className="font-semibold text-slate-900 capitalize">
-                  {selectedInteraction.mechanismType === 'metabolic'
-                    ? 'Metabolic Interference (CYP450 Enzyme)'
-                    : selectedInteraction.mechanismType === 'clearance'
-                    ? 'Renal / Hemodynamic Clearance'
-                    : 'Direct Synergistic Adverse Risk'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Clinical Pharmacology Rationale */}
-          <div>
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
-              Clinical Rationale & Mechanism
-            </span>
-            <div className="text-xs text-slate-600 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 leading-relaxed">
+            <div className="text-xs text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 leading-relaxed font-mono">
               {selectedInteraction.clinicalRationale}
             </div>
           </div>
@@ -202,7 +150,7 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
           <div>
             <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
               <Info className="w-3.5 h-3.5 text-sky-600" />
-              What Patients Should Do
+              Patient Usage Advice
             </span>
             <div className="text-xs text-sky-900 bg-sky-50/70 p-3.5 rounded-xl border border-sky-200/80 leading-relaxed font-medium">
               {selectedInteraction.patientActionableAdvice}
@@ -213,40 +161,19 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
     );
   }
 
-  // DRUG NODE SELECTED
-  const drug = selectedDrug!;
+  // Active Drug Card: Display selectedDrug or default to centerDrug
+  const drug = selectedDrug || centerDrug || drugs[0];
+  if (!drug) return null;
+
   const classItem = DRUG_CLASSES.find((c) => c.key === drug.classKey);
   const inCabinet = isInCabinet(drug.id);
-
-  // Find all direct interactions for this drug
-  const drugInteractions = drug
-    ? DRUGS.map((otherDrug) => {
-        if (otherDrug.id === drug.id) return null;
-        const interaction = DRUGS
-          ? (
-              // Find matching interaction
-              [drug.id, otherDrug.id]
-            )
-          : null;
-        return null;
-      }).filter(Boolean)
-    : [];
-
-  const directInteractions = (
-    // Filter interactions involving this drug
-    drug
-      ? DRUGS.flatMap((otherDrug) => {
-          if (otherDrug.id === drug.id) return [];
-          const match =
-            // check
-            null;
-          return [];
-        })
-      : []
-  );
+  const isCurrentlyCentered = centerDrug?.id === drug.id;
 
   return (
-    <aside aria-label="Medication Profile" className="w-80 md:w-96 bg-white border-l border-slate-200 h-full flex flex-col shadow-lg z-20 overflow-y-auto">
+    <aside
+      aria-label="Medication Profile"
+      className="w-80 md:w-96 bg-white border-l border-slate-200 h-full flex flex-col shadow-lg z-20 overflow-y-auto"
+    >
       {/* Header */}
       <div className="p-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/80">
         <div>
@@ -256,6 +183,11 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
               style={{ backgroundColor: classItem?.color || '#0284C7' }}
             />
             <span className="font-medium text-slate-700">{drug.category}</span>
+            {isCurrentlyCentered && (
+              <span className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 text-[10px] font-bold">
+                CENTER FOCUS
+              </span>
+            )}
           </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">
             {drug.brandName}
@@ -264,15 +196,29 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
             Active: {drug.genericName}
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {selectedDrug && (
+          <button
+            onClick={onClose}
+            title="Reset focus to center medication"
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/50 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      <div className="p-5 space-y-5 flex-1">
+      <div className="p-5 space-y-4 flex-1">
+        {/* Visual Thesaurus Re-center Action if not already center */}
+        {!isCurrentlyCentered && onCenterDrug && (
+          <button
+            onClick={() => onCenterDrug(drug.id)}
+            className="w-full py-2 px-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+          >
+            <Compass className="w-3.5 h-3.5" />
+            <span>Re-Center Visual Thesaurus Web on {drug.brandName}</span>
+          </button>
+        )}
+
         {/* Cabinet Action Button */}
         <button
           onClick={() => onToggleCabinet(drug.id)}
@@ -308,7 +254,7 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
           </div>
         )}
 
-        {/* Description */}
+        {/* Clinical Overview Description */}
         <div>
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
             Clinical Overview
@@ -321,7 +267,7 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
         {/* Common Side Effects */}
         <div>
           <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider block mb-2">
-            Common Side Effects (Dataset)
+            Common Side Effects
           </span>
           <div className="flex flex-wrap gap-1.5">
             {drug.commonSideEffects.map((effect, idx) => (
@@ -335,7 +281,7 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
           </div>
         </div>
 
-        {/* Patient Advice */}
+        {/* Patient Guidance Advice */}
         <div className="bg-sky-50/60 border border-sky-100 rounded-xl p-3.5">
           <span className="text-[11px] font-semibold text-sky-900 uppercase tracking-wider block mb-1 flex items-center gap-1">
             <Info className="w-3.5 h-3.5 text-sky-600" />
@@ -346,17 +292,18 @@ export const DrugInfoSidebar: React.FC<DrugInfoSidebarProps> = ({
           </p>
         </div>
 
-        {/* Direct Dangerous Interaction Neighbors */}
+        {/* Radiating Negative Interaction Spokes */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider">
-              Known Conflicting Drugs ({drugs.length > 0 ? getConflictCount(drug.id, interactions) : 0})
+            <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-sky-600" />
+              Radiating Interaction Spokes ({getConflictCount(drug.id, interactions)})
             </span>
-            <span className="text-[10px] text-slate-400">Click to inspect</span>
+            <span className="text-[10px] text-slate-400">Click to re-center</span>
           </div>
 
-          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-            {getConflictList(drug.id, onSelectDrug, onSelectInteraction, drugs, interactions)}
+          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+            {getConflictList(drug.id, onSelectDrug, onCenterDrug, onSelectInteraction, drugs, interactions, isInCabinet)}
           </div>
         </div>
       </div>
@@ -369,20 +316,22 @@ function getConflictCount(drugId: string, interactionList: DrugInteraction[] = I
   return interactionList.filter((i) => i.drug1 === drugId || i.drug2 === drugId).length;
 }
 
-// Helper for list
+// Helper for list of radiating spokes
 function getConflictList(
   drugId: string,
   onSelectDrug: (d: Drug) => void,
+  onCenterDrug: ((id: string) => void) | undefined,
   onSelectInteraction: (i: DrugInteraction) => void,
   drugList: Drug[] = DRUGS,
-  interactionList: DrugInteraction[] = INTERACTIONS
+  interactionList: DrugInteraction[] = INTERACTIONS,
+  isInCabinet: (id: string) => boolean
 ) {
   const matchingInteractions = interactionList.filter((i) => i.drug1 === drugId || i.drug2 === drugId);
 
   if (matchingInteractions.length === 0) {
     return (
       <div className="text-xs text-slate-400 italic py-2">
-        No severe interactions logged in current dataset.
+        No severe interactions logged for this medication in current dataset.
       </div>
     );
   }
@@ -394,11 +343,16 @@ function getConflictList(
 
     const isSevere = inter.severity === 'severe';
     const isModerate = inter.severity === 'moderate';
+    const inCab = isInCabinet(otherDrug.id);
 
     return (
       <div
         key={inter.id}
-        className="p-2.5 rounded-lg border border-slate-200/90 hover:border-sky-300 bg-white hover:bg-slate-50 transition-all flex items-center justify-between group"
+        className={`p-2.5 rounded-lg border transition-all flex items-center justify-between group ${
+          inCab
+            ? 'bg-rose-50/70 border-rose-200 hover:border-rose-300'
+            : 'bg-white border-slate-200/90 hover:border-sky-300 hover:bg-slate-50'
+        }`}
       >
         <div className="flex-1 min-w-0 mr-2">
           <div className="flex items-center gap-1.5">
@@ -408,27 +362,42 @@ function getConflictList(
               }`}
             />
             <button
-              onClick={() => onSelectDrug(otherDrug)}
+              onClick={() => onCenterDrug ? onCenterDrug(otherDrug.id) : onSelectDrug(otherDrug)}
+              title="Click to re-center Visual Thesaurus on this drug"
               className="text-xs font-bold text-slate-800 hover:text-sky-700 truncate text-left"
             >
               {otherDrug.brandName}
             </button>
+            {inCab && (
+              <span className="text-[9px] font-bold px-1 py-0.2 bg-rose-200 text-rose-800 rounded">
+                Cabinet
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-slate-500 truncate pl-3.5">
             {inter.title}
           </div>
         </div>
 
-        <button
-          onClick={() => onSelectInteraction(inter)}
-          title="Inspect interaction details"
-          className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors shrink-0"
-        >
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onCenterDrug && (
+            <button
+              onClick={() => onCenterDrug(otherDrug.id)}
+              title="Re-center on this drug"
+              className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors text-[10px] font-semibold"
+            >
+              Center
+            </button>
+          )}
+          <button
+            onClick={() => onSelectInteraction(inter)}
+            title="Inspect interaction details"
+            className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-colors shrink-0"
+          >
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     );
   });
 }
-
-

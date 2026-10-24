@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   DRUGS,
   INTERACTIONS,
@@ -24,7 +24,10 @@ import {
   CheckCircle2,
   Sparkles,
   BookOpen,
-  X
+  X,
+  Compass,
+  ArrowLeft,
+  ArrowRight
 } from 'lucide-react';
 
 export default function App() {
@@ -35,7 +38,21 @@ export default function App() {
   const [currentDrugs, setCurrentDrugs] = useState<Drug[]>(DRUGS);
   const [currentInteractions, setCurrentInteractions] = useState<DrugInteraction[]>(INTERACTIONS);
 
-  // Selected entities for sidebar
+  // Visual Thesaurus Central Focus & History State
+  const getInitialDrugId = (): string => {
+    if (typeof window !== 'undefined' && window.location.hash.startsWith('#drug=')) {
+      const hashId = window.location.hash.replace('#drug=', '').toLowerCase();
+      const match = DRUGS.find((d) => d.id === hashId);
+      if (match) return match.id;
+    }
+    return 'warfarin';
+  };
+
+  const [centerDrugId, setCenterDrugId] = useState<string>(getInitialDrugId);
+  const [historyTrail, setHistoryTrail] = useState<string[]>([getInitialDrugId()]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  // Selected entities for detail sidebar
   const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
   const [selectedInteraction, setSelectedInteraction] = useState<DrugInteraction | null>(null);
 
@@ -43,34 +60,130 @@ export default function App() {
   const [cabinetDrugIds, setCabinetDrugIds] = useState<string[]>(['warfarin', 'aspirin', 'lipitor']);
   const [isCabinetHighlightActive, setIsCabinetHighlightActive] = useState<boolean>(false);
 
+  // Top Search Bar State
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState<boolean>(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Modals state
   const [isCheckerOpen, setIsCheckerOpen] = useState<boolean>(false);
   const [isCabinetOpen, setIsCabinetOpen] = useState<boolean>(false);
   const [isDatasetManagerOpen, setIsDatasetManagerOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
-  const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
 
-  // Calculate Hubs vs Spokes
-  const hubDrugs = currentDrugs.filter((d) => d.isHub);
-  const spokeDrugs = currentDrugs.filter((d) => !d.isHub);
+  // Compute active center drug
+  const currentCenterDrug = currentDrugs.find((d) => d.id === centerDrugId) || currentDrugs[0];
 
   // Compute cabinet conflicts in real-time
   const cabinetEvaluation = findInteractionsInCabinet(cabinetDrugIds, currentDrugs, currentInteractions);
   const hasCabinetConflicts = cabinetEvaluation.conflicts.length > 0;
 
-  // Handlers
+  // Sync with browser URL hash & forward/back button navigation
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash.startsWith('#drug=')) {
+        const drugId = window.location.hash.replace('#drug=', '').toLowerCase();
+        if (drugId !== centerDrugId && currentDrugs.some((d) => d.id === drugId)) {
+          setCenterDrugId(drugId);
+        }
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [centerDrugId, currentDrugs]);
+
+  // Center on a new drug (Visual Thesaurus re-center transition)
+  const handleCenterDrug = (drugId: string) => {
+    if (drugId === centerDrugId) return;
+    const targetDrug = currentDrugs.find((d) => d.id === drugId);
+    if (!targetDrug) return;
+
+    // Update history trail (drop forward history if branching)
+    const newTrail = historyTrail.slice(0, historyIndex + 1);
+    newTrail.push(drugId);
+    setHistoryTrail(newTrail);
+    setHistoryIndex(newTrail.length - 1);
+
+    setCenterDrugId(drugId);
+    setSelectedDrug(targetDrug);
+    setSelectedInteraction(null);
+
+    // Update URL hash
+    window.location.hash = `#drug=${drugId}`;
+  };
+
+  // History Navigation: Back
+  const handleNavigateBack = () => {
+    if (historyIndex > 0) {
+      const nextIndex = historyIndex - 1;
+      const targetId = historyTrail[nextIndex];
+      setHistoryIndex(nextIndex);
+      setCenterDrugId(targetId);
+      setSelectedDrug(currentDrugs.find((d) => d.id === targetId) || null);
+      setSelectedInteraction(null);
+      window.location.hash = `#drug=${targetId}`;
+    }
+  };
+
+  // History Navigation: Forward
+  const handleNavigateForward = () => {
+    if (historyIndex < historyTrail.length - 1) {
+      const nextIndex = historyIndex + 1;
+      const targetId = historyTrail[nextIndex];
+      setHistoryIndex(nextIndex);
+      setCenterDrugId(targetId);
+      setSelectedDrug(currentDrugs.find((d) => d.id === targetId) || null);
+      setSelectedInteraction(null);
+      window.location.hash = `#drug=${targetId}`;
+    }
+  };
+
+  // History Navigation: Jump directly to an index in the breadcrumb trail
+  const handleJumpToHistory = (index: number) => {
+    if (index >= 0 && index < historyTrail.length) {
+      const targetId = historyTrail[index];
+      setHistoryIndex(index);
+      setCenterDrugId(targetId);
+      setSelectedDrug(currentDrugs.find((d) => d.id === targetId) || null);
+      setSelectedInteraction(null);
+      window.location.hash = `#drug=${targetId}`;
+    }
+  };
+
+  // Search input change & autocomplete
+  const searchResults = searchQuery.trim()
+    ? currentDrugs.filter(
+        (d) =>
+          d.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          d.genericName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          d.category.toLowerCase().includes(searchQuery.toLowerCase())
+      ).slice(0, 8)
+    : [];
+
+  const handleSelectSearchResult = (drug: Drug) => {
+    handleCenterDrug(drug.id);
+    setSearchQuery('');
+    setIsSearchDropdownOpen(false);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && searchResults.length > 0) {
+      handleSelectSearchResult(searchResults[0]);
+    } else if (e.key === 'Escape') {
+      setIsSearchDropdownOpen(false);
+    }
+  };
+
+  // Handlers for selection
   const handleSelectDrug = (drug: Drug | null) => {
     setSelectedDrug(drug);
-    if (drug) {
-      setSelectedInteraction(null);
-    }
+    if (drug) setSelectedInteraction(null);
   };
 
   const handleSelectInteraction = (interaction: DrugInteraction | null) => {
     setSelectedInteraction(interaction);
-    if (interaction) {
-      setSelectedDrug(null);
-    }
+    if (interaction) setSelectedDrug(null);
   };
 
   const handleToggleCabinet = (drugId: string) => {
@@ -79,43 +192,9 @@ export default function App() {
     );
   };
 
-  const handleAddCabinetDrug = (drugId: string) => {
-    if (!cabinetDrugIds.includes(drugId)) {
-      setCabinetDrugIds((prev) => [...prev, drugId]);
-    }
-  };
-
-  const handleRemoveCabinetDrug = (drugId: string) => {
-    setCabinetDrugIds((prev) => prev.filter((id) => id !== drugId));
-  };
-
-  const handleClearCabinet = () => {
-    setCabinetDrugIds([]);
-    setIsCabinetHighlightActive(false);
-  };
-
-  const handleLoadPreset = (presetIds: string[]) => {
-    setCabinetDrugIds(presetIds);
-  };
-
-  const handleHighlightCabinet = () => {
-    setIsCabinetHighlightActive(true);
-    setSelectedDrug(null);
-    setSelectedInteraction(null);
-  };
-
   const handleClearCabinetHighlight = () => {
     setIsCabinetHighlightActive(false);
-    if (graphRef.current) {
-      graphRef.current.resetView();
-    }
-  };
-
-  const handleFocusInteractionOnGraph = (drugAId: string, drugBId: string) => {
-    setIsCabinetHighlightActive(false);
-    if (graphRef.current) {
-      graphRef.current.focusInteraction(drugAId, drugBId);
-    }
+    if (graphRef.current) graphRef.current.resetView();
   };
 
   // Dataset switching handlers
@@ -126,8 +205,14 @@ export default function App() {
     setSelectedDrug(null);
     setSelectedInteraction(null);
     setIsCabinetHighlightActive(false);
-    if (graphRef.current) {
-      graphRef.current.resetView();
+
+    // If active center drug is in new dataset, keep it; otherwise pick first
+    const exists = preset.drugs.some((d) => d.id === centerDrugId);
+    if (!exists && preset.drugs.length > 0) {
+      setCenterDrugId(preset.drugs[0].id);
+      setHistoryTrail([preset.drugs[0].id]);
+      setHistoryIndex(0);
+      window.location.hash = `#drug=${preset.drugs[0].id}`;
     }
   };
 
@@ -138,19 +223,23 @@ export default function App() {
     setSelectedDrug(null);
     setSelectedInteraction(null);
     setIsCabinetHighlightActive(false);
-    if (graphRef.current) {
-      graphRef.current.resetView();
+
+    if (drugs.length > 0) {
+      setCenterDrugId(drugs[0].id);
+      setHistoryTrail([drugs[0].id]);
+      setHistoryIndex(0);
+      window.location.hash = `#drug=${drugs[0].id}`;
     }
   };
 
   return (
-    <div className="w-screen h-screen flex flex-col bg-slate-50 text-slate-900 overflow-hidden select-none">
+    <div className="w-screen h-screen flex flex-col bg-[#F8FAFC] text-slate-900 overflow-hidden select-none">
       {/* 
-        Top Bar Contract:
-        [Brand title, one line] — [4–5 nav links, 1–2 word labels, single-line] — [1 primary action]
+        Top Bar: Visual Thesaurus Style Header
+        Brand + Centered Visual Thesaurus Search Bar + Navigation Actions
       */}
-      <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-8 shrink-0 z-30">
-        {/* Zone 1: Brand title, one line */}
+      <header className="h-14 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between gap-4 shrink-0 z-30">
+        {/* Brand title */}
         <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-600 to-cyan-500 text-white flex items-center justify-center font-bold text-sm shadow-xs">
             Rx
@@ -158,54 +247,96 @@ export default function App() {
           <span className="text-lg font-bold tracking-tight text-slate-900">
             RxWeb
           </span>
+          <span className="text-xs text-slate-400 hidden sm:inline">·</span>
+          <span className="text-xs text-slate-500 hidden lg:inline font-medium">
+            Visual Thesaurus Radial Map
+          </span>
         </div>
 
-        {/* Zone 2: 4-5 nav links, single-line */}
-        <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
-          <button
-            onClick={() => {
-              if (graphRef.current) graphRef.current.resetView();
-              setIsCabinetHighlightActive(false);
-            }}
-            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
-          >
-            Word Web
-          </button>
-          <button
-            onClick={() => setIsCheckerOpen(true)}
-            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <Search className="w-3.5 h-3.5 text-slate-400" />
-            <span>Pair Checker</span>
-          </button>
-          <button
-            onClick={() => setIsCabinetOpen(true)}
-            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <HeartPulse className="w-3.5 h-3.5 text-slate-400" />
-            <span>Cabinet Scanner</span>
-          </button>
-          <button
-            onClick={() => setIsDatasetManagerOpen(true)}
-            className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <Database className="w-3.5 h-3.5 text-slate-400" />
-            <span>Dataset Pipeline</span>
-          </button>
-          <button
-            onClick={() => setIsExportOpen(true)}
-            className="hover:text-sky-700 text-sky-600 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>Export HTML</span>
-          </button>
-        </nav>
+        {/* Center: Visual Thesaurus Search Bar */}
+        <div className="flex-1 max-w-md relative">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchDropdownOpen(true);
+              }}
+              onFocus={() => setIsSearchDropdownOpen(true)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search medication (e.g. Warfarin, Lipitor, Zoloft)..."
+              className="w-full text-xs bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white pl-9 pr-8 py-2 rounded-xl outline-none transition-all placeholder:text-slate-400"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setIsSearchDropdownOpen(false);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-        {/* Zone 3: 1 primary action */}
+          {/* Autocomplete Dropdown */}
+          {isSearchDropdownOpen && searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
+              {searchResults.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => handleSelectSearchResult(d)}
+                  className="w-full p-2.5 text-left text-xs hover:bg-sky-50/70 flex items-center justify-between transition-colors group"
+                >
+                  <div>
+                    <div className="font-bold text-slate-900 group-hover:text-sky-700">
+                      {d.brandName}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono">
+                      {d.genericName} · {d.category}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-sky-600 font-semibold group-hover:underline">
+                    Center Web →
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right Nav Links & Cabinet Button */}
         <div className="flex items-center gap-3 shrink-0">
+          <nav className="hidden lg:flex items-center gap-4 text-xs font-semibold text-slate-600">
+            <button
+              onClick={() => setIsCheckerOpen(true)}
+              className="hover:text-slate-900 transition-colors flex items-center gap-1.5"
+            >
+              <span>Pair Checker</span>
+            </button>
+            <button
+              onClick={() => setIsDatasetManagerOpen(true)}
+              className="hover:text-slate-900 transition-colors flex items-center gap-1.5"
+            >
+              <span>Datasets</span>
+            </button>
+            <button
+              onClick={() => setIsExportOpen(true)}
+              className="hover:text-sky-700 text-sky-600 transition-colors flex items-center gap-1.5"
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              <span>Export HTML</span>
+            </button>
+          </nav>
+
+          {/* Primary Action: Cabinet Button */}
           <button
             onClick={() => setIsCabinetOpen(true)}
-            className={`px-4 py-2 text-xs font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2 whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2 text-xs font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2 whitespace-nowrap ${
               hasCabinetConflicts
                 ? 'bg-rose-600 text-white hover:bg-rose-700'
                 : 'bg-slate-900 text-white hover:bg-slate-800'
@@ -224,81 +355,44 @@ export default function App() {
         </div>
       </header>
 
-      {/* Sub-header Context / Metadata Strip (Zero-Pill Discipline & Flourish Topology Stats) */}
-      <div className="h-9 bg-slate-50 border-b border-slate-200/80 px-6 flex items-center justify-between text-xs text-slate-500 overflow-x-auto whitespace-nowrap shrink-0">
-        <div className="flex items-center gap-2 text-[11px] font-medium text-slate-600">
-          <span className="font-bold text-sky-700 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-sky-500" />
-            Flourish Hub-and-Spoke Engine
-          </span>
-          <span aria-hidden="true">·</span>
-          <span><strong>{hubDrugs.length}</strong> Central Hubs</span>
-          <span aria-hidden="true">·</span>
-          <span><strong>{spokeDrugs.length}</strong> Orbital Spokes</span>
-          <span aria-hidden="true">·</span>
-          <span><strong>{currentInteractions.length}</strong> Interaction Vectors</span>
-        </div>
-
-        <div className="flex items-center gap-3 text-[11px]">
-          {hasCabinetConflicts ? (
-            <span className="text-rose-600 font-semibold flex items-center gap-1">
-              <ShieldAlert className="w-3 h-3" />
-              {cabinetEvaluation.conflicts.length} Cabinet Conflict{cabinetEvaluation.conflicts.length > 1 ? 's' : ''} Flagged
-            </span>
-          ) : (
-            <span className="text-emerald-700 font-semibold flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              Cabinet Safe (0 Known Clashes)
-            </span>
-          )}
-          <span aria-hidden="true" className="text-slate-300">|</span>
-          <button
-            onClick={() => setIsDatasetManagerOpen(true)}
-            className="text-slate-500 hover:text-sky-700 font-mono flex items-center gap-1 hover:underline"
-          >
-            <span>Active: {activeDatasetId}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Interactive Workspace: Vis Network + Dynamic Inspector Sidebar */}
+      {/* Main Interactive Workspace: Visual Thesaurus Radial Network + Clinical Sidebar */}
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Left/Center: VisNetwork Graph Viewport */}
-        <section aria-label="Interactive Word Web" className="flex-1 h-full relative">
+        {/* Left/Center: Visual Thesaurus Canvas */}
+        <section aria-label="Visual Thesaurus Radial Map" className="flex-1 h-full relative">
           <NetworkGraph
             ref={graphRef}
             drugs={currentDrugs}
             interactions={currentInteractions}
+            centerDrugId={centerDrugId}
+            onCenterDrug={handleCenterDrug}
             onSelectDrug={handleSelectDrug}
             onSelectInteraction={handleSelectInteraction}
             selectedDrugId={selectedDrug?.id || null}
             cabinetDrugIds={cabinetDrugIds}
             isCabinetHighlightActive={isCabinetHighlightActive}
             onClearCabinetHighlight={handleClearCabinetHighlight}
+            historyTrail={historyTrail}
+            historyIndex={historyIndex}
+            onNavigateBack={handleNavigateBack}
+            onNavigateForward={handleNavigateForward}
+            onJumpToHistory={handleJumpToHistory}
           />
         </section>
 
-        {/* Right: Dynamic Inspector Sidebar */}
+        {/* Right: Dynamic Clinical Inspector & Definition Card */}
         <DrugInfoSidebar
           drugs={currentDrugs}
           interactions={currentInteractions}
+          centerDrug={currentCenterDrug}
           selectedDrug={selectedDrug}
           selectedInteraction={selectedInteraction}
           onClose={() => {
             setSelectedDrug(null);
             setSelectedInteraction(null);
-            if (graphRef.current) graphRef.current.resetView();
           }}
-          onSelectDrug={(d) => {
-            setSelectedDrug(d);
-            setSelectedInteraction(null);
-            if (graphRef.current) graphRef.current.focusDrug(d.id);
-          }}
-          onSelectInteraction={(i) => {
-            setSelectedInteraction(i);
-            setSelectedDrug(null);
-            if (graphRef.current) graphRef.current.focusInteraction(i.drug1, i.drug2);
-          }}
+          onSelectDrug={handleSelectDrug}
+          onCenterDrug={handleCenterDrug}
+          onSelectInteraction={handleSelectInteraction}
           isInCabinet={(id) => cabinetDrugIds.includes(id)}
           onToggleCabinet={handleToggleCabinet}
         />
@@ -306,35 +400,55 @@ export default function App() {
 
       {/* Modals */}
       <InteractionChecker
-        drugs={currentDrugs}
-        interactions={currentInteractions}
         isOpen={isCheckerOpen}
         onClose={() => setIsCheckerOpen(false)}
-        onFocusInteractionOnGraph={handleFocusInteractionOnGraph}
+        drugs={currentDrugs}
+        interactions={currentInteractions}
+        onFocusInteractionOnGraph={(drugAId: string, drugBId: string) => {
+          setIsCheckerOpen(false);
+          handleCenterDrug(drugAId);
+          setTimeout(() => {
+            const match = currentInteractions.find(
+              (i) =>
+                (i.drug1 === drugAId && i.drug2 === drugBId) ||
+                (i.drug1 === drugBId && i.drug2 === drugAId)
+            );
+            if (match) setSelectedInteraction(match);
+          }, 350);
+        }}
       />
 
       <PrescriptionCabinet
-        drugs={currentDrugs}
-        interactions={currentInteractions}
         isOpen={isCabinetOpen}
         onClose={() => setIsCabinetOpen(false)}
+        drugs={currentDrugs}
+        interactions={currentInteractions}
         cabinetDrugIds={cabinetDrugIds}
-        onAddDrug={handleAddCabinetDrug}
-        onRemoveDrug={handleRemoveCabinetDrug}
-        onClearCabinet={handleClearCabinet}
-        onLoadPreset={handleLoadPreset}
-        onHighlightInGraph={handleHighlightCabinet}
-        onFocusInteraction={(a, b) => {
-          handleFocusInteractionOnGraph(a, b);
-          const match = currentInteractions.find(
-            (i) => (i.drug1 === a && i.drug2 === b) || (i.drug1 === b && i.drug2 === a)
-          );
-          if (match) setSelectedInteraction(match);
+        onAddDrug={(id) => {
+          if (!cabinetDrugIds.includes(id)) {
+            setCabinetDrugIds((prev) => [...prev, id]);
+          }
+        }}
+        onRemoveDrug={(id) => {
+          setCabinetDrugIds((prev) => prev.filter((x) => x !== id));
+        }}
+        onClearCabinet={() => {
+          setCabinetDrugIds([]);
+          setIsCabinetHighlightActive(false);
         }}
         onSelectDrug={(d) => {
-          setSelectedDrug(d);
-          if (graphRef.current) graphRef.current.focusDrug(d.id);
+          setIsCabinetOpen(false);
+          handleCenterDrug(d.id);
         }}
+        onFocusInteraction={(drugAId, drugBId) => {
+          setIsCabinetOpen(false);
+          handleCenterDrug(drugAId);
+        }}
+        onHighlightInGraph={() => {
+          setIsCabinetOpen(false);
+          setIsCabinetHighlightActive(true);
+        }}
+        onLoadPreset={(ids) => setCabinetDrugIds(ids)}
       />
 
       <DatasetManagerModal
@@ -350,51 +464,9 @@ export default function App() {
       <SingleHtmlExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
-        currentDrugs={currentDrugs}
-        currentInteractions={currentInteractions}
+        drugs={currentDrugs}
+        interactions={currentInteractions}
       />
-
-      {/* Clinical Guide Modal */}
-      {isGuideOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
-              <h3 className="text-base font-bold text-slate-900">
-                Flourish Hub-and-Spoke Logistics Engine
-              </h3>
-              <button
-                onClick={() => setIsGuideOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600 leading-relaxed">
-              <div className="space-y-1">
-                <h4 className="font-semibold text-slate-900 text-sm">Logistics Topology</h4>
-                <p>
-                  High-connectivity medications (such as broad-spectrum anticoagulants like Warfarin, common NSAIDs like Aspirin, and heavy CYP450 metabolizers like Lipitor and Zoloft) serve as <strong>Central Hubs</strong>. They are assigned higher mass in the physics engine to anchor cluster orbits. Interacting drugs float as <strong>Satellite Spokes</strong> around their primary hubs.
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <h4 className="font-semibold text-slate-900 text-sm">Real-Time Physics Tuning</h4>
-                <p>
-                  Open the <strong>Physics Controls</strong> panel to fine-tune the gravitational constant, spoke orbital spring lengths, and damping friction in real time.
-                </p>
-              </div>
-            </div>
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setIsGuideOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg"
-              >
-                Close Guide
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
